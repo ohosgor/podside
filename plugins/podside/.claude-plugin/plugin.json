@@ -1,0 +1,11 @@
+{
+  "name": "podside",
+  "version": "0.1.0",
+  "description": "A k9s-style Kubernetes pod pane that lives beside Claude Code",
+  "author": { "name": "Onur HOSGOR", "url": "https://github.com/ohosgor" },
+  "homepage": "https://github.com/ohosgor/podside",
+  "repository": "https://github.com/ohosgor/podside",
+  "license": "Apache-2.0",
+  "keywords": ["kubernetes", "k8s", "k9s", "kubectl", "mod"],
+  "types": "./types/index.d.ts"
+}
