@@ -39,6 +39,8 @@ test('the pod table, detail views and band draw on every surface', { timeoutMs: 
     const { Text } = $$.ui.resolve(e)
     return <Text>engine</Text>
   })
+  on('store.get', async () => ({ value: undefined }) as any)
+  on('store.set', async () => ({ value: undefined }) as any)
   on('ui.panes', async () => ({ value: [] }) as any)
   on('command.register', async () => ({ value: undefined }) as any)
   on('prompt.submit', async () => ({ value: {} }) as any)
@@ -62,6 +64,11 @@ test('the pod table, detail views and band draw on every surface', { timeoutMs: 
       await ui.press({ key: 'do:l' })
       expect(await ui.find({ type: 'Text', text: /line 2/ })).toBeDefined()
       await ui.press({ key: 'do:b' })
+      expect(await ui.find({ type: 'Text', text: /How to use podside/ })).toBeDefined()
+      await ui.press({ key: 'do:h' })
+      expect(await ui.find({ type: 'Text', text: /How to use podside/ })).toBeUndefined()
+      expect(await ui.find({ type: 'Text', text: /h help/ })).toBeDefined()
+      await ui.press({ key: 'do:h' })
       await ui.unmount()
     }
 
@@ -73,4 +80,36 @@ test('the pod table, detail views and band draw on every surface', { timeoutMs: 
     })
     await band.unmount()
   }
+})
+
+test('a long list is windowed so the action bar stays on screen', async ($, on) => {
+  const many = Array.from(
+    { length: 200 },
+    (_, i) => `team  api-${String(i).padStart(3, '0')}   1/1   Running   0   1d   10.0.1.${i % 250}   node-a   <none>   <none>`,
+  ).join('\n')
+  on('process.run', async (_$, e) =>
+    ({ value: e.argv.join(' ').includes('get pods') ? { exitCode: 0, stdout: many, stderr: '' } : fakeKubectl(e.argv) }) as any,
+  )
+  on('clock.now', async () => ({ value: 1_000_000 }) as any)
+  on('store.get', async () => ({ value: true }) as any)
+  on('store.set', async () => ({ value: undefined }) as any)
+  on('ui.toast', async () => ({ value: undefined }) as any)
+
+  const ui = await $.ui.mount({
+    plugin: 'podside',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'podside',
+    props: { ...paneProps(120), scroll: { offset: 0, bodyRows: 30 } } as any,
+  })
+  await ui.press({ key: 'do:r' })
+  expect(await ui.find({ key: 'pod:team/api-000' })).toBeDefined()
+  expect(await ui.find({ key: 'pod:team/api-150' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /below/ })).toBeDefined()
+
+  for (let i = 0; i < 40; i++) await ui.press({ key: 'do:j' })
+  expect(await ui.find({ key: 'pod:team/api-040' })).toBeDefined()
+  expect(await ui.find({ key: 'pod:team/api-000' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /above/ })).toBeDefined()
+  await ui.unmount()
 })

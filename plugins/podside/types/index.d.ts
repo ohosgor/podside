@@ -30,6 +30,7 @@ declare module 'claude-code' {
       isActive: boolean
       filter: string
       onlyFailing: boolean
+      isHelpOpen: boolean
       info: ClusterInfo
     }
   }

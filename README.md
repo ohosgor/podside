@@ -43,7 +43,7 @@ The pane takes the keyboard when it opens. `Esc` hands it back to the prompt; cl
 
 | Key | Action |
 | --- | --- |
-| `↑` `↓` / `Tab` | Move between pods; the focused pod is selected |
+| `j` `k` | Move the selection down / up (`↑` `↓` and `Tab` work too) |
 | `l` | Logs of the selected pod |
 | `d` | Describe the selected pod |
 | `a` | Ask Claude about the selected pod |
@@ -51,8 +51,9 @@ The pane takes the keyboard when it opens. `Esc` hands it back to the prompt; cl
 | `f` | Toggle failing pods only |
 | `n` | Next namespace |
 | `r` | Refresh now |
+| `h` | Show or hide the built-in help |
 
-The **context**, **namespace** and **search** fields at the top are reachable with `Tab`.
+The **context**, **namespace** and **search** fields at the top are reachable with `Tab`. A short guide sits at the bottom of the pane on first use; `h` hides it and podside remembers that.
 
 ## Develop
 

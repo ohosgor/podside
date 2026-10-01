@@ -9,7 +9,6 @@ const PANE = 'podside'
 const FAST_MS = 5_000
 const SLOW_MS = 30_000
 const ALL = '_all'
-const MAX_ROWS = 300
 
 // Mid-tone colors that read on both dark and light terminals; everything else is dim or plain.
 const P = {
@@ -41,6 +40,7 @@ const syncedAt = atom({ plugin: 'podside', key: 'syncedAt' } as const, 0)
 const isActive = atom({ plugin: 'podside', key: 'isActive' } as const, false)
 const filter = atom({ plugin: 'podside', key: 'filter' } as const, '')
 const onlyFailing = atom({ plugin: 'podside', key: 'onlyFailing' } as const, false)
+const isHelpOpen = atom({ plugin: 'podside', key: 'isHelpOpen' } as const, true)
 const info = atom(
   { plugin: 'podside', key: 'info' } as const,
   { cluster: '', user: '', k8s: '' } as ClusterInfo,
@@ -110,6 +110,14 @@ const fit = (text: string, width: number) =>
 const tail = (text: string, max: number) => (text.length > max ? '…\n' + text.slice(-max) : text)
 
 const keyOf = (p: Pod) => `${p.ns}/${p.name}`
+
+function visiblePods(all: Pod[], query: string, isFailingOnly: boolean) {
+  return all.filter(
+    p =>
+      (!isFailingOnly || !p.isHealthy) &&
+      (!query || `${p.ns}/${p.name} ${p.status}`.toLowerCase().includes(query)),
+  )
+}
 
 // Columns after the status dot, fitted to the pane width
 function columns(width: number) {
@@ -230,6 +238,25 @@ async function loadDetail($: EngineInterface, kind: 'logs' | 'describe', isFirst
   }
 }
 
+async function moveSelection($: EngineInterface, delta: number) {
+  const list = visiblePods(
+    await read($, pods),
+    (await read($, filter)).toLowerCase(),
+    await read($, onlyFailing),
+  )
+  if (list.length === 0) return
+  const sel = await read($, selected)
+  const at = list.findIndex(p => keyOf(p) === sel)
+  const next = at < 0 ? 0 : Math.min(list.length - 1, Math.max(0, at + delta))
+  const key = keyOf(list[next]!)
+  await update($, selected, () => key)
+}
+
+async function toggleHelp($: EngineInterface) {
+  const isOpen = await update($, isHelpOpen, v => !v)
+  await $.store.set('helpHidden', !isOpen)
+}
+
 async function askClaude($: EngineInterface) {
   const key = await read($, selected)
   if (!key) {
@@ -272,6 +299,7 @@ export const register: Register = on => {
     })
     // Module variables reset on reload; ask the engine whether the pane is still open
     isPaneOpen = (await $.ui.panes()).some(p => p.id === PANE)
+    if ((await $.store.get('helpHidden')) === true) await update($, isHelpOpen, () => false)
     if (await read($, isActive)) void activate($)
     return next(e)
   })
@@ -331,7 +359,11 @@ export const register: Register = on => {
     const Input = 'Input' in els ? els.Input : undefined
 
     const width = Math.max(56, e.props.bodyColumns ?? 100)
-    const bodyRows = e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 40
+    // Docked beside the transcript the pane has a fixed height; inline it grows up to a limit
+    const paneRows =
+      e.props.placement === 'dock'
+        ? (e.props.scroll?.bodyRows ?? 40)
+        : Math.max(14, Math.floor((e.viewport?.rows ?? 40) * 0.6))
     const all = await read($, pods)
     const sel = await read($, selected)
     const mode = await read($, view)
@@ -341,6 +373,9 @@ export const register: Register = on => {
     const synced = await read($, syncedAt)
     const query = (await read($, filter)).toLowerCase()
     const isFailingOnly = await read($, onlyFailing)
+    const showHelp = await read($, isHelpOpen)
+    // Lines the bottom bar takes: rule, actions (two when narrow), error, hint or help
+    const footerLines = 2 + (width < 100 ? 1 : 0) + (err ? 1 : 0) + (showHelp ? 13 : 1)
     const { k8s } = await read($, info)
     const now = await $.clock.now()
     const nsLabel = namespace === ALL ? 'all namespaces' : namespace
@@ -374,6 +409,44 @@ export const register: Register = on => {
       </Box>
     )
 
+    // ── Help: a one-line hint always, the full guide until the user hides it ──
+    const hint = (
+      <Text dimColor>
+        {e.props.isFocused
+          ? 'j k select a pod · Esc back to the prompt · h help'
+          : 'Click the pane or press ctrl+x then Tab to use it · h help'}
+      </Text>
+    )
+    const helpRow = (keys: string, text: string) => (
+      <Text>
+        <Text color={P.accent}>{fit(keys, 12)}</Text>
+        <Text dimColor>{text}</Text>
+      </Text>
+    )
+    const help = (
+      <Box flexDirection="column" marginTop={1}>
+        <Text bold>How to use podside</Text>
+        {e.props.isFocused
+          ? helpRow('Esc', 'hand the keyboard back to the prompt; the pane stays open')
+          : helpRow('ctrl+x Tab', 'give the keyboard to the pane (or click it)')}
+        {helpRow('j  k', 'move the selection down or up (↑ ↓ and Tab work too)')}
+        {helpRow('l  d', 'logs (following) or describe of the selected pod')}
+        {helpRow('a', 'ask Claude to diagnose the selected pod')}
+        {helpRow('f  n', 'failing pods only · next namespace')}
+        {helpRow('b  r', 'back to the list · refresh now')}
+        {helpRow('search', 'Tab to the search field and type to filter by name or status')}
+        <Text>
+          <Text color={GLYPH.ok.color}>● running  </Text>
+          <Text color={GLYPH.warn.color}>◐ starting  </Text>
+          <Text color={GLYPH.bad.color}>✕ failing  </Text>
+          <Text dimColor>○ completed</Text>
+        </Text>
+        <Text dimColor>
+          While this pane is open, Claude sees the selected pod: just ask "why is this pod failing?"
+        </Text>
+      </Box>
+    )
+
     // ── Bottom bar: every action, one key each ─────────────────────────────
     const action = (hotkey: string, label: string, onPress: () => void) => (
       <Button key={`do:${hotkey}`} plain hotkey={hotkey} label={label} onPress={onPress} />
@@ -390,10 +463,14 @@ export const register: Register = on => {
             action('f', isFailingOnly ? 'show all' : 'failing only', () =>
               void update($, onlyFailing, v => !v),
             )}
+          {mode === 'list' && action('j', 'down', () => void moveSelection($, 1))}
+          {mode === 'list' && action('k', 'up', () => void moveSelection($, -1))}
           {mode === 'list' && action('n', 'next namespace', () => void nextNamespace($))}
           {action('r', 'refresh', () => void refreshPods($))}
+          {action('h', showHelp ? 'hide help' : 'help', () => void toggleHelp($))}
         </Box>
         {err && <Text color={P.bad}>{fit(err, width)}</Text>}
+        {showHelp ? help : hint}
       </Box>
     )
 
@@ -401,7 +478,7 @@ export const register: Register = on => {
     if (mode !== 'list') {
       const raw = (await read($, detail)).split('\n')
       // Logs stay pinned to the newest lines; describe reads from the top
-      const room = Math.max(5, bodyRows - 6)
+      const room = Math.max(5, paneRows - 3 - footerLines)
       const lines = mode === 'logs' ? raw.slice(-room) : raw.slice(0, 400)
       return (
         <Box flexDirection="column">
@@ -475,38 +552,58 @@ export const register: Register = on => {
       </Box>
     )
 
-    const list = all.filter(
-      p =>
-        (!isFailingOnly || !p.isHealthy) &&
-        (!query || `${p.ns}/${p.name} ${p.status}`.toLowerCase().includes(query)),
-    )
-    const shown = list.slice(0, MAX_ROWS)
+    const list = visiblePods(all, query, isFailingOnly)
     const cols = columns(width)
     const [nameCol, ...restCols] = cols
     const cells = (p: Pod) => restCols.map(c => fit(String(p[c.id]), c.width)).join('')
 
-    const rows: any[] = []
-    let group = ''
-    for (const p of shown) {
-      if (namespace === ALL && p.ns !== group) {
-        group = p.ns
-        const inGroup = list.filter(q => q.ns === group)
-        const failing = inGroup.filter(q => !q.isHealthy).length
-        rows.push(
-          <Box key={`ns:${group}`} marginTop={rows.length > 0 ? 1 : 0}>
-            <Text bold>{group}</Text>
+    // Draw only the lines that fit, as a window around the selected pod, so the
+    // action bar and help below the list always stay on screen.
+    type Line = { kind: 'ns'; ns: string } | { kind: 'pod'; pod: Pod }
+    const lines: Line[] = []
+    for (const pod of list) {
+      const prev = lines[lines.length - 1]
+      const prevNs = prev ? (prev.kind === 'ns' ? prev.ns : prev.pod.ns) : ''
+      if (namespace === ALL && pod.ns !== prevNs) lines.push({ kind: 'ns', ns: pod.ns })
+      lines.push({ kind: 'pod', pod })
+    }
+    const room = Math.max(4, paneRows - 4 - footerLines - 1)
+    const at = Math.max(0, lines.findIndex(l => l.kind === 'pod' && keyOf(l.pod) === sel))
+    const from = Math.min(Math.max(0, at - Math.floor(room / 2)), Math.max(0, lines.length - room))
+    const visible = lines.slice(from, from + room)
+    const first = visible[0]
+    if (namespace === ALL && first?.kind === 'pod') {
+      // Keep the namespace of the first row in view
+      visible.unshift({ kind: 'ns', ns: first.pod.ns })
+      visible.pop()
+    }
+    const above = from
+    const below = Math.max(0, lines.length - from - room)
+
+    const groupInfo = (group: string) => {
+      const inGroup = list.filter(q => q.ns === group)
+      return { total: inGroup.length, failing: inGroup.filter(q => !q.isHealthy).length }
+    }
+
+    const rows = visible.map(line => {
+      if (line.kind === 'ns') {
+        const { total, failing } = groupInfo(line.ns)
+        return (
+          <Box key={`ns:${line.ns}`}>
+            <Text bold>{line.ns}</Text>
             <Text dimColor>
               {'  '}
-              {inGroup.length} pods
+              {total} pods
             </Text>
             {failing > 0 && <Text color={P.bad}>{'  '}{failing} failing</Text>}
-          </Box>,
+          </Box>
         )
       }
+      const p = line.pod
       const key = keyOf(p)
       const isSel = sel === key
       const g = GLYPH[health(p)]
-      rows.push(
+      return (
         <Box key={`row:${key}`}>
           <Text color={P.accent}>{isSel ? '▌' : ' '}</Text>
           <Text color={g.color} dimColor={g.dim}>{g.mark} </Text>
@@ -518,9 +615,9 @@ export const register: Register = on => {
             onPress={() => void update($, selected, () => key)}
           />
           <Text bold={isSel} dimColor={!isSel}>{cells(p)}</Text>
-        </Box>,
+        </Box>
       )
-    }
+    })
 
     return (
       <Box flexDirection="column">
@@ -532,15 +629,17 @@ export const register: Register = on => {
           {cols.map(c => fit(c.title, c.width)).join('')}
         </Text>
         {rows}
-        {list.length > MAX_ROWS && (
-          <Text dimColor>
-            {'   '}+{list.length - MAX_ROWS} more · narrow it with namespace, search or f
-          </Text>
-        )}
-        {list.length === 0 && (
+        {list.length === 0 ? (
           <Text dimColor>
             {'   '}
             {err ? 'kubectl failed, see below' : isFailingOnly ? 'nothing failing' : 'no pods'}
+          </Text>
+        ) : (
+          <Text dimColor>
+            {'   '}
+            {above > 0 ? `↑ ${above} above  ` : ''}
+            {below > 0 ? `↓ ${below} below  ` : ''}
+            {above + below > 0 ? 'j / k to move' : `${list.length} shown`}
           </Text>
         )}
         {bottomBar}
