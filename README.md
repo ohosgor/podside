@@ -6,6 +6,10 @@ podside is a Claude Code [mod](https://code.claude.com/docs/en/plugins/mods/over
 
 It is inspired by the keyboard-first flow of [k9s](https://k9scli.io), but it is a separate project with no affiliation to k9s.
 
+![podside open beside a Claude Code session: the pod list on the right with a crash-looping pod selected, and Claude's diagnosis of that pod on the left](docs/hero.png)
+
+<sub>A demo cluster. Pressing <code>a</code> on the crash-looping <code>checkout-api</code> pod sent its describe output and logs to Claude, which traced the crash to a database Service with no ready endpoints and suggested read-only commands to confirm it.</sub>
+
 ## What it does
 
 - **Live pod list**, grouped by namespace, refreshed every 5 seconds while the pane is open
@@ -15,6 +19,12 @@ It is inspired by the keyboard-first flow of [k9s](https://k9scli.io), but it is
 - **Selection as context**: while the pane is open, every prompt you send carries the selected pod, so "this pod" means something
 - **A one-line summary above the prompt** (context, namespace, healthy and failing counts) once you have opened the pane
 - **Read-only by design**: podside only runs `kubectl get`, `logs`, `describe`, `version` and `config` reads. It never writes to your cluster, and its context switcher passes `--context` instead of touching your kubeconfig.
+
+## Screenshots
+
+| Logs of the selected pod, following | The pane with its built-in help |
+| --- | --- |
+| ![The logs view of a crash-looping pod, ending in a fatal database error](docs/logs.png) | ![The pod list with the help section open below the action bar](docs/help.png) |
 
 ## Install
 

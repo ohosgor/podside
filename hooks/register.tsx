@@ -119,21 +119,29 @@ function visiblePods(all: Pod[], query: string, isFailingOnly: boolean) {
   )
 }
 
-// Columns after the status dot, fitted to the pane width
-function columns(width: number) {
+// Columns after the status dot: each sized to its longest value, the name taking what is left
+function columns(width: number, list: Pod[]) {
+  const longest = (id: keyof Pod, title: string, cap: number) =>
+    Math.min(cap, Math.max(title.length, ...list.map(p => String(p[id]).length)) + 2)
   const cols: { id: keyof Pod; title: string; width: number }[] = [
     { id: 'name', title: 'name', width: 0 },
-    { id: 'ready', title: 'ready', width: 7 },
-    { id: 'status', title: 'status', width: 22 },
-    { id: 'restarts', title: 'restarts', width: 14 },
+    { id: 'ready', title: 'ready', width: longest('ready', 'ready', 8) },
+    { id: 'status', title: 'status', width: longest('status', 'status', 24) },
+    { id: 'restarts', title: 'restarts', width: longest('restarts', 'restarts', 15) },
   ]
-  if (width >= 120) cols.push({ id: 'ip', title: 'ip', width: 17 })
-  if (width >= 140) cols.push({ id: 'node', title: 'node', width: 14 })
-  cols.push({ id: 'age', title: 'age', width: 7 })
+  if (width >= 120) cols.push({ id: 'ip', title: 'ip', width: longest('ip', 'ip', 17) })
+  if (width >= 140) cols.push({ id: 'node', title: 'node', width: longest('node', 'node', 18) })
+  cols.push({ id: 'age', title: 'age', width: longest('age', 'age', 8) })
   const fixed = cols.reduce((n, c) => n + c.width, 0)
-  cols[0]!.width = Math.max(16, width - 4 - fixed) // gutter, dot and a space
+  cols[0]!.width = Math.max(16, width - 3 - fixed) // gutter, dot and its space
   return cols
 }
+
+// Pod names end in the distinguishing hash, so cut them in the middle
+const fitName = (text: string, width: number) =>
+  text.length <= width
+    ? text.padEnd(width)
+    : text.slice(0, Math.ceil((width - 1) / 2)) + '…' + text.slice(text.length - Math.floor((width - 1) / 2))
 
 async function refreshContexts($: EngineInterface) {
   try {
@@ -386,8 +394,9 @@ export const register: Register = on => {
     const rule = <Text dimColor>{'─'.repeat(width)}</Text>
 
     // ── Top bar: wordmark, where you are, health totals ───────────────────
+    const isWide = width >= 110
     const topBar = (
-      <Box justifyContent="space-between">
+      <Box flexDirection={isWide ? 'row' : 'column'} justifyContent="space-between">
         <Text>
           <Text color={P.accent} bold>◆ podside</Text>
           <Text dimColor>{'  '}</Text>
@@ -454,7 +463,7 @@ export const register: Register = on => {
     const bottomBar = (
       <Box flexDirection="column">
         {rule}
-        <Box gap={2} flexWrap="wrap">
+        <Box columnGap={2} flexWrap="wrap">
           {mode !== 'list' && action('b', 'back', () => void update($, view, () => 'list'))}
           {action('l', 'logs', () => void loadDetail($, 'logs'))}
           {action('d', 'describe', () => void loadDetail($, 'describe'))}
@@ -488,7 +497,7 @@ export const register: Register = on => {
             <Text bold> {sel ?? ''}</Text>
             <Text dimColor>
               {'  '}
-              {mode === 'logs' ? 'logs · following, newest at the bottom' : 'describe'}
+              {mode === 'logs' ? 'logs · following' : 'describe'}
             </Text>
           </Text>
           {rule}
@@ -553,7 +562,7 @@ export const register: Register = on => {
     )
 
     const list = visiblePods(all, query, isFailingOnly)
-    const cols = columns(width)
+    const cols = columns(width, list)
     const [nameCol, ...restCols] = cols
     const cells = (p: Pod) => restCols.map(c => fit(String(p[c.id]), c.width)).join('')
 
@@ -567,7 +576,8 @@ export const register: Register = on => {
       if (namespace === ALL && pod.ns !== prevNs) lines.push({ kind: 'ns', ns: pod.ns })
       lines.push({ kind: 'pod', pod })
     }
-    const room = Math.max(4, paneRows - 4 - footerLines - 1)
+    const headerLines = isWide ? 4 : 5
+    const room = Math.max(4, paneRows - headerLines - footerLines - 1)
     const at = Math.max(0, lines.findIndex(l => l.kind === 'pod' && keyOf(l.pod) === sel))
     const from = Math.min(Math.max(0, at - Math.floor(room / 2)), Math.max(0, lines.length - room))
     const visible = lines.slice(from, from + room)
@@ -610,7 +620,7 @@ export const register: Register = on => {
           <Button
             key={`pod:${key}`}
             plain
-            label={fit(p.name, nameCol!.width)}
+            label={fitName(p.name, nameCol!.width - 1) + ' '}
             dimColor={health(p) === 'done'}
             onPress={() => void update($, selected, () => key)}
           />

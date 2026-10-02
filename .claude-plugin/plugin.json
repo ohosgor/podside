@@ -1,7 +1,7 @@
 {
   "name": "podside",
   "displayName": "podside",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A k9s-style Kubernetes pod pane that lives beside Claude Code",
   "author": {
     "name": "Onur HOSGOR",
