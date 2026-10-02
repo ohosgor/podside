@@ -59,20 +59,27 @@ The **context**, **namespace** and **search** fields at the top are reachable wi
 
 ```sh
 git clone https://github.com/ohosgor/podside
-claude --plugin-dir ./podside/plugins/podside   # hot-reloads on save
-claude plugin validate ./podside/plugins/podside
-claude plugin test ./podside/plugins/podside
+claude --plugin-dir ./podside   # hot-reloads on save
+claude plugin validate ./podside
+claude plugin test ./podside
 ```
 
-The hooks module is `plugins/podside/hooks/register.tsx`; its tests are in `register.test.tsx` and run against a stubbed `kubectl`.
+The hooks module is `hooks/register.tsx`; its tests are in `register.test.tsx` and run against a stubbed `kubectl`.
 
 ## Security
 
 A mod runs inside Claude Code with your permissions. podside's own calls are limited to the `kubectl` reads listed above, `$.prompt.submit` for "Ask Claude", and drawing its pane. You can list everything it hooks and calls without running it:
 
 ```sh
-claude plugin validate ./plugins/podside
+claude plugin validate .
 ```
+
+## Data and privacy
+
+- **What podside runs:** only `kubectl`, with your own kubeconfig: `config get-contexts`, `config current-context`, `config view --minify`, `version`, `get ns`, `get pods`, `logs` and `describe pod`. It talks to your cluster through `kubectl` and makes no other network requests.
+- **What reaches Claude:** while the pane is open, each prompt you send carries the selected pod's namespace, name, status, readiness, restarts, age, node and IP. When you press `a`, the pod's `describe` output and its last 120 log lines are sent as a prompt. Nothing is sent while the pane is closed or no pod is selected.
+- **What it stores:** whether you hid the help (`h`), in Claude Code's local plugin store. Pod data lives only in the session's memory.
+- **What it never does:** write to your cluster, change your kubeconfig, read environment variables or credentials, or send data anywhere else.
 
 ## License
 

@@ -1,11 +1,14 @@
 {
   "name": "podside",
   "description": "A Kubernetes pod pane that lives beside Claude Code",
-  "owner": { "name": "Onur HOSGOR", "url": "https://github.com/ohosgor" },
+  "owner": {
+    "name": "Onur HOSGOR",
+    "url": "https://github.com/ohosgor"
+  },
   "plugins": [
     {
       "name": "podside",
-      "source": "./plugins/podside",
+      "source": "./",
       "description": "Browse pods, read logs and describe output, and hand a pod to Claude without leaving the session"
     }
   ]
